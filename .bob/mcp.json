@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "watsonx-orchestrate-adk-docs": {
+      "command": "/Users/fiyinolatunji/.local/bin/uvx",
+      "args": [
+        "mcp-proxy",
+        "--transport",
+        "streamablehttp",
+        "https://developer.watson-orchestrate.ibm.com/mcp"
+      ],
+      "timeout": 120000
+    },
+    "watsonx-orchestrate-adk": {
+      "command": "/Users/fiyinolatunji/.local/bin/uvx",
+      "args": [
+        "ibm-watsonx-orchestrate-mcp-server"
+      ],
+      "env": {
+        "WXO_MCP_WORKING_DIRECTORY": "/Users/fiyinolatunji/Downloads/bob-watsonx-orchestrate-appliance",
+        "WXO_MCP_DEBUG": ""
+      },
+      "timeout": 120000
+    }
+  }
+}

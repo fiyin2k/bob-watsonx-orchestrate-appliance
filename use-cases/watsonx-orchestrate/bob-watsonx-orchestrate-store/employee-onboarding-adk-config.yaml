@@ -1,0 +1,443 @@
+# IBM watsonx Orchestrate ADK Configuration
+# Employee Onboarding Orchestrator Agent
+# Version: 1.0.0
+
+agent:
+  name: onboarding-orchestrator
+  version: 1.0.0
+  display_name: "Enterprise Employee Onboarding Agent"
+  description: "Enterprise orchestration agent automating employee onboarding across Core HR, ServiceNow ITIL, and Microsoft 365 Entra ID."
+  
+  # Agent Configuration
+  config:
+    model:
+      provider: watsonx
+      model_id: ibm/granite-3-1-8b-instruct
+      parameters:
+        temperature: 0.2
+        max_tokens: 2048
+        top_p: 0.85
+        frequency_penalty: 0.1
+        presence_penalty: 0.0
+    
+    fallback_model:
+      provider: watsonx
+      model_id: meta-llama/llama-3-1-70b-instruct
+      parameters:
+        temperature: 0.2
+        max_tokens: 2048
+    
+    # System Instructions
+    instructions: |
+      You are the Enterprise Onboarding Orchestrator, an advanced AI agent designed to execute, monitor, and coordinate complex multi-step employee onboarding tasks across Core HR databases, IT Service Management (ServiceNow), and Directory Services (Microsoft 365).
+
+      **System Boundaries:**
+      - Core HR: Access and update master candidate records (Name, ID, Department, Manager, Start Date, Personal Email).
+      - ServiceNow: Retrieve IT catalog item specs, open physical asset requests, and track provisioning progress.
+      - Microsoft 365 (Graph API): Register corporate Entra ID identities, provision Outlook mailboxes, assign licensing packages, and configure Teams memberships.
+
+      **Strict Execution Protocols:**
+      1. Inspect and sanitize candidate details before triggering provisioning.
+      2. Require explicit Human-in-the-Loop (HITL) approval prior to creating M365 user accounts, allocating software licenses, or ordering physical hardware items.
+      3. Never hardcode or log client secrets, API tokens, or plain-text credentials. Use cryptographically secure utilities to generate and distribute secure temporary passwords directly to candidates.
+      4. If a username collision occurs (e.g. j.doe@company.com is already registered), automatically invoke name deduplication sequences (e.g. j.doe2@company.com), alert the supervisor, and proceed.
+
+# Tools Configuration
+tools:
+  # Core HR System Tools
+  - name: get_candidate_by_id
+    type: python_function
+    module: onboarding_tools.core_hr
+    function: fetch_candidate
+    description: "Retrieve candidate details and onboarding requirements from the master HR database."
+    parameters:
+      candidate_id:
+        type: string
+        required: true
+        pattern: "^CAND-[0-9]+$"
+    human_approval: false
+
+  - name: update_hr_onboarding_status
+    type: python_function
+    module: onboarding_tools.core_hr
+    function: update_status
+    description: "Update candidate status, corporate email and ServiceNow tickets in Core HR."
+    parameters:
+      candidate_id:
+        type: string
+        required: true
+      status:
+        type: string
+        enum: ["Offer Accepted", "Approval Pending", "Provisioning Active", "Active - Provisioned", "Failed"]
+        required: true
+      corporate_email:
+        type: string
+        required: false
+      servicenow_ticket_id:
+        type: string
+        required: false
+    human_approval: false
+
+  # Microsoft 365 Tools
+  - name: create_m365_user_account
+    type: python_function
+    module: onboarding_tools.m365
+    function: create_ad_user
+    description: "Register a new corporate identity inside Microsoft Active Directory / Entra ID."
+    parameters:
+      user_principal_name:
+        type: string
+        required: true
+      display_name:
+        type: string
+        required: true
+      given_name:
+        type: string
+        required: true
+      surname:
+        type: string
+        required: true
+      department:
+        type: string
+        required: true
+      job_title:
+        type: string
+        required: true
+      temp_password:
+        type: string
+        required: true
+    human_approval: true
+    approval_message: "Requesting approval to register new corporate identity: ${display_name} (${user_principal_name}) in Entra ID. Proceed?"
+
+  - name: assign_m365_licenses
+    type: python_function
+    module: onboarding_tools.m365
+    function: apply_licenses
+    description: "Assign product license SKUs to an active Entra ID account."
+    parameters:
+      user_id:
+        type: string
+        required: true
+      sku_ids:
+        type: array
+        items:
+          type: string
+        required: true
+    human_approval: true
+    approval_message: "Authorize allocation of Microsoft 365 licensing packages for User ID ${user_id}? Skus: ${sku_ids}"
+
+  - name: manage_m365_group_membership
+    type: python_function
+    module: onboarding_tools.m365
+    function: add_user_to_groups
+    description: "Add an active user account to targeted directory security and distribution groups."
+    parameters:
+      user_id:
+        type: string
+        required: true
+      group_ids:
+        type: array
+        items:
+          type: string
+        required: true
+    human_approval: false
+
+  # ServiceNow ITIL Tools
+  - name: create_servicenow_provisioning_ticket
+    type: python_function
+    module: onboarding_tools.servicenow
+    function: book_equipment_ticket
+    description: "Submit standard asset and security badge catalog requests in ServiceNow."
+    parameters:
+      requested_for_email:
+        type: string
+        required: true
+      item_sku:
+        type: string
+        required: true
+      shipping_address:
+        type: string
+        required: true
+      urgency:
+        type: string
+        enum: ["low", "medium", "high"]
+        default: "medium"
+    human_approval: true
+    approval_message: "Confirm physical hardware procurement ticket for ${requested_for_email}: Sku ${item_sku}. Direct Shipping: ${shipping_address}"
+
+  - name: get_servicenow_ticket_status
+    type: python_function
+    module: onboarding_tools.servicenow
+    function: query_ticket
+    description: "Track shipment, fulfillment, and closure state of standard IT catalog requests."
+    parameters:
+      request_number:
+        type: string
+        required: true
+        pattern: "^REQ[0-9]+$"
+    human_approval: false
+
+  # Notification and Utility Tools
+  - name: generate_secure_password
+    type: python_function
+    module: onboarding_tools.utils
+    function: get_crypto_password
+    description: "Produce a random, cryptographically strong compliance-standard temporary password."
+    parameters: {}
+    human_approval: false
+
+  - name: send_external_welcome_email
+    type: python_function
+    module: onboarding_tools.notifier
+    function: dispatch_welcome_letter
+    description: "Deliver security credentials and enterprise orientation guides to candidate's personal email."
+    parameters:
+      to_email:
+        type: string
+        required: true
+      employee_name:
+        type: string
+        required: true
+      corporate_email:
+        type: string
+        required: true
+      temp_password:
+        type: string
+        required: true
+      start_date:
+        type: string
+        required: true
+    human_approval: false
+
+# Workflows Configuration
+workflows:
+  - name: unified_employee_onboarding
+    description: "Orchestrated end-to-end multi-system employee onboarding process."
+    trigger: "HR Coordinator launches or signed candidate contract detected."
+    steps:
+      - name: candidate_record_ingestion
+        description: "Pull candidate record and perform validity screening."
+        tools:
+          - get_candidate_by_id
+        actions:
+          - fetch_candidate
+          - validate_fields
+      
+      - name: credential_preparation
+        description: "Generate corporate identity strings and password packages."
+        tools:
+          - generate_secure_password
+        actions:
+          - compile_usernames
+          - generate_temp_credentials
+      
+      - name: manager_plan_approval
+        description: "Submit finalized system blueprint and standard configurations for manager check."
+        actions:
+          - display_onboarding_blueprint
+          - capture_manager_hitl_approval
+        human_approval: true
+
+      - name: directory_account_provisioning
+        description: "Create Entra ID accounts, assign mailboxes and security groups."
+        tools:
+          - create_m365_user_account
+          - assign_m365_licenses
+          - manage_m365_group_membership
+        actions:
+          - create_identity
+          - allocate_licenses
+          - apply_group_memberships
+
+      - name: standard_asset_booking
+        description: "Register laptop and badge procurement in ServiceNow."
+        tools:
+          - create_servicenow_provisioning_ticket
+        actions:
+          - submit_it_tickets
+      
+      - name: dispatch_candidate_onboarding_pack
+        description: "Deliver secure temporary credentials to personal mailbox."
+        tools:
+          - send_external_welcome_email
+        actions:
+          - dispatch_welcome_kit
+
+      - name: system_sync_and_completion
+        description: "Write-back tracking references to core databases."
+        tools:
+          - update_hr_onboarding_status
+        actions:
+          - sync_tracking_ids
+          - notify_manager_on_teams
+
+  - name: onboarding_status_monitoring
+    description: "Track physical laptop shipment and delivery milestones."
+    trigger: "Manager request or scheduled daily cron."
+    steps:
+      - name: status_query
+        tools:
+          - get_servicenow_ticket_status
+        actions:
+          - fetch_fulfillment_milestones
+      - name: manager_alerting
+        actions:
+          - update_onboarding_pipeline_cards
+          - notify_manager_on_teams
+
+# Knowledge Bases Configuration
+knowledge_bases:
+  - name: corporate_onboarding_faq_kb
+    type: document_collection
+    description: "Corporate benefits, medical enrollment, payroll FAQ, policy handbook vectors."
+    sources:
+      - employee_handbook_pdf
+      - standard_benefits_enrollment_docx
+      - office_policies_badge_pickup_guideline
+    indexing:
+      strategy: vector_embeddings
+      embedding_model: watsonx/slate-125m-english-rtrvr
+    update_frequency: quarterly
+
+  - name: it_hardware_entitlements_kb
+    type: structured_document
+    description: "Standard hardware configurations, security access matrices and departmental software entitlements."
+    sources:
+      - it_hardware_specifications_matrix_xlsx
+      - software_entitlement_by_department_csv
+    indexing:
+      strategy: hierarchical
+      tags: [department, hardware, software, role]
+    update_frequency: semi_annually
+
+# Connections Configuration
+connections:
+  - name: core_hr_integration
+    type: rest_api
+    provider: generic_rest
+    authentication:
+      method: oauth_client_credentials
+      client_id_source: environment
+      variable_name: CORE_HR_CLIENT_ID
+      client_secret_source: environment
+      variable_name: CORE_HR_CLIENT_SECRET
+    endpoints:
+      base_url: https://hr.enterprise.com/api/v2/
+    security:
+      tls_version: "1.3"
+      certificate_validation: true
+
+  - name: m365_graph_integration
+    type: microsoft_graph
+    provider: microsoft_365
+    authentication:
+      method: azure_client_credentials
+      tenant_id_source: environment
+      variable_name: AZURE_TENANT_ID
+      client_id_source: environment
+      variable_name: AZURE_CLIENT_ID
+      client_secret_source: environment
+      variable_name: AZURE_CLIENT_SECRET
+    endpoints:
+      base_url: https://graph.microsoft.com/v1.0/
+    security:
+      least_privilege_scope: ["User.ReadWrite.All", "Directory.ReadWrite.All"]
+
+  - name: servicenow_itsm_integration
+    type: rest_api
+    provider: servicenow
+    authentication:
+      method: oauth_authorization_code
+      client_id_source: environment
+      variable_name: SERVICENOW_CLIENT_ID
+      client_secret_source: environment
+      variable_name: SERVICENOW_CLIENT_SECRET
+    endpoints:
+      base_url: https://enterprise-prod.service-now.com/api/sn_sc/
+    security:
+      tls_version: "1.3"
+      vpn_routing_tunnel: true
+
+# Deployment Configuration
+deployment:
+  environments:
+    - name: development
+      replicas: 1
+      resources:
+        cpu: 2
+        memory: 4Gi
+      logging_level: DEBUG
+    - name: staging
+      replicas: 2
+      resources:
+        cpu: 4
+        memory: 8Gi
+      logging_level: INFO
+      monitoring: enhanced
+    - name: production
+      replicas: 3
+      resources:
+        cpu: 8
+        memory: 16Gi
+      logging_level: WARN
+      monitoring: comprehensive
+      auto_scaling:
+        min_replicas: 3
+        max_replicas: 8
+        target_cpu: 75
+
+# Observability Configuration
+observability:
+  logging:
+    provider: ibm_log_analysis
+    format: json
+    retention:
+      production: 90d
+    sensitive_data_scrubbing:
+      enabled: true
+      rules:
+        - name: hash_passwords
+          pattern: "temp_password\":\\s*\"[^\"]+\""
+        - name: hash_personal_emails
+          pattern: "[a-zA-Z0-9._%+-]+@gmail\\.com"
+  monitoring:
+    provider: ibm_cloud_monitoring
+    metrics:
+      - onboarding_cycle_time
+      - tool_success_rate
+      - approval_latency
+  tracing:
+    provider: opentelemetry
+    exporter: jaeger
+
+# Governance Configuration
+governance:
+  security:
+    mfa_required: true
+    rbac:
+      roles:
+        - name: hr_coordinator
+          permissions: ["read_candidate", "trigger_onboarding", "query_status"]
+        - name: hr_manager
+          permissions: ["read_candidate", "trigger_onboarding", "query_status", "approve_provisioning"]
+        - name: it_admin
+          permissions: ["*"]
+    credential_storage: ibm_secrets_manager
+  compliance:
+    standards:
+      - GDPR
+      - SOC2_TYPE_II
+    audit_logging: true
+    audit_retention_period: 1y
+
+metadata:
+  version: 1.0.0
+  created_by: "WXO Agent Architect"
+  created_date: "2026-10-27"
+  status: design_phase
+  tags:
+    - hr_automation
+    - servicenow
+    - microsoft_365
+    - employee_onboarding
+    - adk

@@ -1,0 +1,5 @@
+# Employee Onboarding Orchestrator Dependencies
+pydantic>=2.10.0
+pyyaml>=6.0.2
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
